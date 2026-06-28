@@ -1,0 +1,136 @@
+--!strict
+local x1 = _G.bit or _G.bit32
+if not x1 and string.pack then
+    x1 = {
+        band = function(x2: number, x3: number): number return x2 & x3 end,
+        bor  = function(x2: number, x3: number): number return x2 | x3 end,
+        bxor = function(x2: number, x3: number): number return x2 ~ x3 end,
+        rshift = function(x2: number, x3: number): number return x2 >> x3 end,
+        lshift = function(x2: number, x3: number): number return x2 << x3 end,
+    }
+end
+
+local function x4(x5: string): (string?, string?)
+    local x6 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    local x7: { [string]: number } = {}
+    for x8 = 1, #x6 do 
+        x7[string.sub(x6, x8, x8)] = x8 - 1 
+    end
+    
+    x5 = string.gsub(string.upper(x5), "[ =]", "")
+    local x9: number = 0
+    local x10: number = 0
+    local x11: { string } = {}
+    
+    for x8 = 1, #x5 do
+        local x12 = string.sub(x5, x8, x8)
+        local x13 = x7[x12]
+        if not x13 then return nil, "Invalid Base32" end
+        
+        x9 = x1.lshift(x9, 5) + x13
+        x10 = x10 + 5
+        
+        if x10 >= 8 then
+            x10 = x10 - 8
+            local x14 = x1.band(x1.rshift(x9, x10), 0xFF)
+            table.insert(x11, string.char(x14))
+        end
+    end
+    return table.concat(x11), nil
+end
+
+local function x15(x16: string): string
+    local x17: number, x18: number, x19: number, x20: number, x21: number = 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0
+    local x22 = #x16 * 8
+    
+    x16 = x16 .. "\x80"
+    local x23 = (56 - (#x16 % 64)) % 64
+    x16 = x16 .. string.rep("\x00", x23)
+    x16 = x16 .. string.pack(">I8", x22)
+    
+    for x24 = 1, #x16, 64 do
+        local x25 = string.sub(x16, x24, x24 + 63)
+        local x26: { number } = {}
+        for x8 = 1, 16 do
+            x26[x8] = string.unpack(">I4", x25, (x8 - 1) * 4 + 1)
+        end
+        for x8 = 17, 80 do
+            local x27 = x1.bxor(x26[x8 - 3], x26[x8 - 8], x26[x8 - 14], x26[x8 - 16])
+            x26[x8] = x1.bor(x1.lshift(x27, 1), x1.rshift(x27, 31))
+        end
+        
+        local x28, x29, x30, x31, x32 = x17, x18, x19, x20, x21
+        for x8 = 1, 80 do
+            local x33: number, x34: number
+            if x8 <= 20 then
+                x33 = x1.bor(x1.band(x29, x30), x1.band(x1.bxor(x29, -1), x31))
+                x34 = 0x5A827999
+            elseif x8 <= 40 then
+                x33 = x1.bxor(x29, x30, x31)
+                x34 = 0x6ED9EBA1
+            elseif x8 <= 60 then
+                x33 = x1.bor(x1.band(x29, x30), x1.band(x29, x31), x1.band(x30, x31))
+                x34 = 0x8F1BBCDC
+            else
+                x33 = x1.bxor(x29, x30, x31)
+                x34 = 0x23011984 + 0xA761A852
+            end
+            
+            local x35 = (x1.bor(x1.lshift(x28, 5), x1.rshift(x28, 27)) + x33 + x32 + x34 + x26[x8]) & 0xFFFFFFFF
+            x32 = x31
+            x31 = x30
+            x30 = x1.bor(x1.lshift(x29, 30), x1.rshift(x29, 2))
+            x29 = x28
+            x28 = x35
+        end
+        x17 = (x17 + x28) & 0xFFFFFFFF
+        x18 = (x18 + x29) & 0xFFFFFFFF
+        x19 = (x19 + x30) & 0xFFFFFFFF
+        x20 = (x20 + x31) & 0xFFFFFFFF
+        x21 = (x21 + x32) & 0xFFFFFFFF
+    end
+    return string.pack(">I4I4I4I4I4", x17, x18, x19, x20, x21)
+end
+
+local function x36(x37: string, x38: string): string
+    if #x37 > 64 then x37 = x15(x37) end
+    if #x37 < 64 then x37 = x37 .. string.rep("\x00", 64 - #x37) end
+    
+    local x39: { string } = {}
+    local x40: { string } = {}
+    for x8 = 1, 64 do
+        local x41 = string.byte(x37, x8) :: number
+        x39[x8] = string.char(x1.bxor(x41, 0x36))
+        x40[x8] = string.char(x1.bxor(x41, 0x5C))
+    end
+    
+    return x15(table.concat(x40) .. x15(table.concat(x39) .. x38))
+end
+
+local x55 = function(x42: string, x43: number?): string
+    local x44 = x43 or 30
+    local x45, x46 = x4(x42)
+    if not x45 then 
+        return string.format('{\n  "Error": "%s"\n}', tostring(x46)) 
+    end
+    
+    local x47 = os.time()
+    local x48 = math.floor(x47 / x44)
+    local x49 = x44 - (x47 % x44)
+    
+    local x50 = string.pack(">I8", x48)
+    local x51 = x36(x45, x50)
+    
+    local x52 = x1.band(string.byte(x51, 20), 0x0F) + 1
+    local x53 = string.unpack(">I4", x51, x52)
+    x53 = x1.band(x53, 0x7FFFFFFF)
+    
+    local x54 = string.format("%06d", x53 % 1000000)
+    
+    return string.format([[ {
+   "Code": "%s",
+   "ExpiredTime": %d
+}]], x54, x49)
+end
+
+return x55
